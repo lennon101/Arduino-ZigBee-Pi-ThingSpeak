@@ -18,8 +18,22 @@
 #include "MemoryFree.h" // https://github.com/maniacbug/MemoryFree
 
 // Include any sensor libraries here
-#include "MPL3115A2.h" // Pressure sensor
-#include "HTU21D.h" // Humidity sensor
+//#include "MPL3115A2.h" // Pressure sensor
+//#include "HTU21D.h" // Humidity sensor
+
+//----------Dalas Temp Sensors-------------
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+// Data wire is plugged into port 2 on the Arduino
+#define ONE_WIRE_BUS 2
+
+// Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
+OneWire oneWire(ONE_WIRE_BUS);
+
+// Pass our oneWire reference to Dallas Temperature.
+DallasTemperature temp(&oneWire);
+//-----------------------------------------
 
 #define DEBUG 1
 
@@ -33,16 +47,16 @@ const byte SOUND = A0;
 // parameters
 const unsigned long UPDATE = 15500; // update interval, 15.5s (ThingSpeak preferred)
 const unsigned int SOUND_UPDATE = 1000;
-const short N_SENSORS = 5;
+const short N_SENSORS = 3;
 const short N_DUMPS = 2;
 
 // Sensors
 const ReadingFnPointer sensors[] =
-  {*getHumidityStr, *getTemperatureStr, *getPressureStr, *getLightStr, *getSoundStr};
+{*getTemperatureStr, *getTemperatureStr, *getTemperatureStr};
 const unsigned int channels[] =
-  {37372,           37372,              37372,           37372,        37372       };
+{38795,           38795,              38795       };
 const int fields[] =
-  {1,               2,                  3,               4,            5           };
+{1,               2,                  3           };
 
 // other Constants
 const char READING_WIDTH = 12; // xxxxxx.xxx
@@ -54,10 +68,12 @@ unsigned long lastUpdate; //The millis counter to see when a second rolls by
 unsigned long lastSoundUpdate;
 unsigned long soundSum;
 unsigned int soundCount;
-MPL3115A2 pressure;
-HTU21D humidity;
+//MPL3115A2 pressure;
+//HTU21D humidity;
 DataLogger dataLogger;
 unsigned long sound_pres = 0;
+
+int count = 0;
 
 void setup() {
   // General setup
@@ -65,20 +81,20 @@ void setup() {
   Serial.print("Beginning...");
   pinMode(STAT1, OUTPUT); //Status LED Blue
   pinMode(STAT2, OUTPUT); //Status LED Green
-  
+
   // Add custom sensor setup code to this function.
   setupSensors();
-  
+
   // Configure DataLogger
   dataLogger = DataLogger(N_SENSORS, READING_WIDTH, N_DUMPS);
   // Configure data logger inputs
-  for (int i=0; i<N_SENSORS; ++i) {
+  for (int i = 0; i < N_SENSORS; ++i) {
     dataLogger.addReading(sensors[i]);
   }
   // configure data logger outputs
   dataLogger.addDump(*dumpToSerial);
   dataLogger.addDump(*dumpToSerialJSON);
-  
+
   Serial.println(" done.");
 }
 
@@ -88,10 +104,10 @@ void loop() {
     digitalWrite(STAT1, HIGH); // Blink stat LED
     lastUpdate += UPDATE; // update timer
     lastSoundUpdate = lastUpdate;
-    
+
     dataLogger.takeReadings(); // update readings from sensors
     dataLogger.dumpReadings(); // write out to XBee
-    
+
     //debugStats(); // Optional debugging
     digitalWrite(STAT1, LOW); // Turn off stat LED
   }
@@ -109,28 +125,57 @@ void loop() {
 
 void setupSensors() {
   // Configure the pressure and temperature sensor
-  pressure.begin(); // Get sensor online
-  pressure.setModeBarometer(); // Measure pressure in Pascals from 20 to 110 kPa
-  pressure.setOversampleRate(7); // Set Oversample to the recommended 128
-  pressure.enableEventFlags(); // Enable all three pressure and temp event flags 
+  //  pressure.begin(); // Get sensor online
+  //  pressure.setModeBarometer(); // Measure pressure in Pascals from 20 to 110 kPa
+  //  pressure.setOversampleRate(7); // Set Oversample to the recommended 128
+  //  pressure.enableEventFlags(); // Enable all three pressure and temp event flags
 
   // Configure the humidity sensor
-  humidity.begin();
+  //  humidity.begin();
+
+  // Configure the Temp sensor
+  temp.begin();
 }
 
 // Sensor input functions should take a buffer, and save their value to
 // that buffer. They must not have a return value.
 
 void getHumidityStr(char *buf) {
-  dtostrf(humidity.readHumidity(), READING_WIDTH, READING_PRECISION, buf);
+  //  dtostrf(humidity.readHumidity(), READING_WIDTH, READING_PRECISION, buf);
 }
 
 void getTemperatureStr(char *buf) {
-  dtostrf(pressure.readTemp(), READING_WIDTH, READING_PRECISION, buf);
+  //dtostrf(pressure.readTemp(), READING_WIDTH, READING_PRECISION, buf);
+
+  // call sensors.requestTemperatures() to issue a global temperature
+  // request to all devices on the bus
+
+  Serial.print("Requesting temperatures...");
+  temp.requestTemperatures(); // Send the command to get temperatures
+
+  Serial.println("DONE");
+  // After we got the temperatures, we can print them here.
+  // We use the function ByIndex, and as an example get the temperature from the first sensor only.
+  //for (int i = 0; i <= 2; ++i) {
+
+  Serial.print("Device ");
+  Serial.print(count);
+  Serial.print(" is: ");
+  Serial.println(temp.getTempCByIndex(count));
+  dtostrf(temp.getTempCByIndex(count), READING_WIDTH, READING_PRECISION, buf);
+  ++count;
+  if (count > 2) {
+    count = 0;
+  }
+
+  //delay(1000);
+  //}
+
+  //dtostrf(temp.getTempCByIndex(), READING_WIDTH, READING_PRECISION, buf);
 }
 
 void getPressureStr(char *buf) {
-  dtostre(pressure.readPressure(), buf, READING_WIDTH-6, 0);
+  //  dtostre(pressure.readPressure(), buf, READING_WIDTH - 6, 0);
 }
 
 void getLightStr(char *buf) {
@@ -138,12 +183,12 @@ void getLightStr(char *buf) {
   float lightSensor = analogRead(LIGHT);
   operatingVoltage = 3.3 / operatingVoltage; //The reference voltage is 3.3V
   lightSensor = operatingVoltage * lightSensor;
-  
-  dtostrf(lightSensor, READING_WIDTH, READING_PRECISION, buf);
+
+  //dtostrf(lightSensor, READING_WIDTH, READING_PRECISION, buf);
 }
 
 void getSoundStr(char *buf) {
-  dtostrf((float)soundSum / (float)soundCount, READING_WIDTH, READING_PRECISION, buf);
+  //dtostrf((float)soundSum / (float)soundCount, READING_WIDTH, READING_PRECISION, buf);
   soundSum = 0;
   soundCount = 0;
 }
@@ -160,14 +205,15 @@ void getSoundStr(char *buf) {
 // Start char: '!', end char: '\n', delimiter: ','.
 void dumpToSerial(char* data, short height, short width) {
   Serial.print('!');
-  for (int i=0; i<height; ++i) {
-    for (int j=0; j<width; ++j) {
+  for (int i = 0; i < height; ++i) {
+    for (int j = 0; j < width; ++j) {
       //Serial.print(" ");
       //Serial.print(i*width+j);
       //Serial.print(":");
-      Serial.print(data[i*width+j]);
+      Serial.print(data[i * width + j]);
+      //Serial.println("dumpToSerial");
     }
-    if (i<height-1)
+    if (i < height - 1)
       Serial.print(',');
   }
   Serial.println();
@@ -177,7 +223,7 @@ void dumpToSerial(char* data, short height, short width) {
 // Start char: '^', end char: '\n', body is in JSON format.
 void dumpToSerialJSON(char* data, short height, short width) {
   Serial.print("^[");
-  for (int i=0; i<height; ++i) {
+  for (int i = 0; i < height; ++i) {
     //debugStats();
     delay(5);
     Serial.print(F("{channel: "));
@@ -185,11 +231,11 @@ void dumpToSerialJSON(char* data, short height, short width) {
     Serial.print(F(",field: "));
     Serial.print(fields[i]);
     Serial.print(F(",data: "));
-    for (int j=0; j<width; ++j) {
-      if (data[i*width+j] != ' ') // optional: omit whitespace
-        Serial.print(data[i*width+j]);
+    for (int j = 0; j < width; ++j) {
+      if (data[i * width + j] != ' ') // optional: omit whitespace
+        Serial.print(data[i * width + j]);
     }
-    if (i<height-1)
+    if (i < height - 1)
       Serial.print("},");
     else
       Serial.print('}');
@@ -210,7 +256,7 @@ void debugStats() {
     Serial.print("SP: "); Serial.println((unsigned int) stackptr);
   }
 }
-  
+
 
 /* This function places the current value of the heap and stack pointers in the
 * variables. You can call it from any place in your code and save the data for
